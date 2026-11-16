@@ -100,3 +100,7 @@ python plot_triangle.py 2-10 --file other_samples.h5
   `phangs_kde.py`).
 - Python ≥ 3.12 (required by slugpy), with numpy, scipy, astropy, h5py,
   matplotlib, and slugpy's other dependencies.
+
+## License
+
+BSD 3-Clause; see [LICENSE](LICENSE). This is the same license as slug3.
