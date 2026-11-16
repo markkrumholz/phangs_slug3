@@ -1,4 +1,5 @@
 *.pdf
 *.h5
 *.txt
+*.fits
 __pycache__/
