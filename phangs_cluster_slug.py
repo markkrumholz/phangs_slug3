@@ -247,19 +247,21 @@ def main():
                         help="plain text summary output file")
     parser.add_argument("--out-hdf5", default=osp.join(HERE, "phangs_cluster_slug_samples.h5"),
                         help="HDF5 conditional sample output file")
+    parser.add_argument("--chunk", type=int, default=500,
+                        help="number of clusters to process and write at a time (default 500)")
     args = parser.parse_args()
 
     # Read the data
     t0 = time.time()
     index, galaxy, phot, phot_err, band_filters = read_catalog(CATALOG, args.ncluster or None)
     ncl = len(index)
-    print(f"Read {ncl} clusters from {osp.basename(CATALOG)}")
+    print(f"Read {ncl} clusters from {osp.basename(CATALOG)}", flush=True)
 
     # Load the default library, with our prior
     cs = cluster_slug(priors=prior)
     names = list(cs.inference_quantities)
     print(f"Loaded library ({cs.size} clusters) in {time.time() - t0:.1f} s; "
-          f"inference quantities {names}")
+          f"inference quantities {names}", flush=True)
 
     # Group clusters by their filter set: the filters of the bands they
     # have photometry in. Since every band's filters are distinct, the
@@ -269,67 +271,15 @@ def main():
     for j in range(ncl):
         groups.setdefault(tuple(band_filters[j, have[j]]), []).append(j)
 
-    # Outputs
+    # Outputs kept in memory: the small per-cluster results for the text
+    # summary. The posterior samples are written to the HDF5 file a chunk
+    # of clusters at a time, since for the whole catalog they would not
+    # fit in memory.
     dist_err = np.full((ncl, N_NEIGHBOR), np.nan)
     dist_euc = np.full((ncl, N_NEIGHBOR), np.nan)
     pcts = np.full((ncl, len(names), len(PERCENTILES)), np.nan)
-    samples = [None] * ncl
-    h2inv_by_group = {}
+    ndone = 0
 
-    for key, member_list in groups.items():
-        members = np.array(member_list)
-        pattern = have[members[0]]
-        filters = [str(f) for f in key]
-        if len(filters) == 0:
-            print(f"  {len(members)} clusters have no usable photometry; skipping them")
-            continue
-        t1 = time.time()
-        cs.add_filterset(filters)
-        kde = cs.kdes[tuple(filters)]
-        # Inverse squared bandwidth of the posterior: the default
-        # bandwidth is diagonal and the errors only affect the photometric
-        # dimensions, so it is the physical block of the joint one
-        phys = [kde.names.index(n) for n in names]
-        h2inv = np.ascontiguousarray(kde.h2Inv[np.ix_(phys, phys)])
-        h2inv_by_group[tuple(filters)] = h2inv
-        print(f"  Filter set {filters}: {len(members)} clusters "
-              f"(KDE built in {time.time() - t1:.1f} s)")
-
-        p = np.ascontiguousarray(phot[np.ix_(members, pattern)])
-        e = np.ascontiguousarray(phot_err[np.ix_(members, pattern)])
-
-        # Nearest neighbors, in units of the photometric errors and, with
-        # the Euclidean norm, in mag
-        t1 = time.time()
-        dist, _ = cs.neighbors(p, N_NEIGHBOR, filterset=filters, errors=e, norm="errors")
-        dist_err[members] = np.asarray(dist)
-        dist, _ = cs.neighbors(p, N_NEIGHBOR, filterset=filters, norm="Euclidean")
-        dist = dist.to_value(u.mag) if isinstance(dist, u.Quantity) else np.asarray(dist)
-        dist_euc[members] = dist
-        print(f"    neighbors: {time.time() - t1:.1f} s")
-
-        # Posterior samples
-        t1 = time.time()
-        res = cs.conditional_sample(p, massTol=args.mass_tol, filterset=filters, errors=e)
-        print(f"    conditional_sample: {time.time() - t1:.1f} s")
-
-        # Marginal percentiles
-        t1 = time.time()
-        for j, (pts, wgts, _rows) in zip(members, res):
-            samples[j] = (pts, wgts, filters)
-            pcts[j] = marginal_percentiles(pts, wgts, h2inv, names)
-        print(f"    marginal percentiles: {time.time() - t1:.1f} s")
-
-        # Drop this filter set's KDE, which spans the whole library, so
-        # that only one is held in memory at a time
-        cs.remove_filterset(filters)
-
-    # Write the plain text summary
-    write_text(args.out_text, index, galaxy, dist_err[:, N_NEIGHBOR - 1],
-               dist_euc[:, N_NEIGHBOR - 1], pcts, names)
-    print(f"Wrote {args.out_text}")
-
-    # Write the conditional samples
     with h5py.File(args.out_hdf5, "w") as f:
         f.attrs["catalog"] = osp.basename(CATALOG)
         f.attrs["quantities"] = names
@@ -345,24 +295,78 @@ def main():
             "first, from cluster_slug.neighbors with the 'errors' norm (in units of the "
             "photometric errors) and the 'Euclidean' norm (in mag), respectively.")
         f.attrs["mass_tol"] = args.mass_tol
-        for j in range(ncl):
-            if samples[j] is None:
+
+        for key, member_list in groups.items():
+            members_all = np.array(member_list)
+            pattern = have[members_all[0]]
+            filters = [str(flt) for flt in key]
+            if len(filters) == 0:
+                print(f"  {len(members_all)} clusters have no usable photometry; skipping them",
+                      flush=True)
                 continue
-            pts, wgts, filters = samples[j]
-            grp = f.create_group(str(index[j]))
-            # Stored as float32, gzip-compressed (with the shuffle filter,
-            # which improves gzip's compression of floating-point data);
-            # HDF5 cannot chunk, and so cannot compress, an empty dataset
-            comp = dict(compression="gzip", compression_opts=4, shuffle=True) \
-                if len(wgts) > 0 else {}
-            grp.create_dataset("points", data=pts.astype(np.float32), **comp)
-            grp.create_dataset("weights", data=wgts.astype(np.float32), **comp)
-            grp.create_dataset("dist_err", data=dist_err[j])
-            grp.create_dataset("dist_euc", data=dist_euc[j])
-            grp.attrs["galaxy"] = str(galaxy[j])
-            grp.attrs["filters"] = filters
-            grp.attrs["h2Inv"] = h2inv_by_group[tuple(filters)]
-    print(f"Wrote {args.out_hdf5}")
+            t1 = time.time()
+            cs.add_filterset(filters)
+            kde = cs.kdes[tuple(filters)]
+            # Inverse squared bandwidth of the posterior: the default
+            # bandwidth is diagonal and the errors only affect the
+            # photometric dimensions, so it is the physical block of the
+            # joint one
+            phys = [kde.names.index(n) for n in names]
+            h2inv = np.ascontiguousarray(kde.h2Inv[np.ix_(phys, phys)])
+            print(f"  Filter set {filters}: {len(members_all)} clusters "
+                  f"(KDE built in {time.time() - t1:.1f} s)", flush=True)
+
+            for c0 in range(0, len(members_all), args.chunk):
+                members = members_all[c0:c0 + args.chunk]
+                t1 = time.time()
+                p = np.ascontiguousarray(phot[np.ix_(members, pattern)])
+                e = np.ascontiguousarray(phot_err[np.ix_(members, pattern)])
+
+                # Nearest neighbors, in units of the photometric errors
+                # and, with the Euclidean norm, in mag
+                dist, _ = cs.neighbors(p, N_NEIGHBOR, filterset=filters, errors=e, norm="errors")
+                dist_err[members] = np.asarray(dist)
+                dist, _ = cs.neighbors(p, N_NEIGHBOR, filterset=filters, norm="Euclidean")
+                dist = dist.to_value(u.mag) if isinstance(dist, u.Quantity) else np.asarray(dist)
+                dist_euc[members] = dist
+
+                # Posterior samples
+                res = cs.conditional_sample(p, massTol=args.mass_tol, filterset=filters, errors=e)
+
+                # Marginal percentiles, and write the samples
+                for j, (pts, wgts, _rows) in zip(members, res):
+                    pcts[j] = marginal_percentiles(pts, wgts, h2inv, names)
+                    grp = f.create_group(str(index[j]))
+                    # Stored as float32, gzip-compressed (with the shuffle
+                    # filter, which improves gzip's compression of
+                    # floating-point data); HDF5 cannot chunk, and so
+                    # cannot compress, an empty dataset
+                    comp = dict(compression="gzip", compression_opts=4, shuffle=True) \
+                        if len(wgts) > 0 else {}
+                    grp.create_dataset("points", data=pts.astype(np.float32), **comp)
+                    grp.create_dataset("weights", data=wgts.astype(np.float32), **comp)
+                    grp.create_dataset("dist_err", data=dist_err[j])
+                    grp.create_dataset("dist_euc", data=dist_euc[j])
+                    grp.attrs["galaxy"] = str(galaxy[j])
+                    grp.attrs["filters"] = filters
+                    grp.attrs["h2Inv"] = h2inv
+                del res
+                f.flush()
+
+                ndone += len(members)
+                elapsed = time.time() - t0
+                print(f"    {ndone}/{ncl} clusters done; chunk took {time.time() - t1:.1f} s, "
+                      f"elapsed {elapsed / 60:.1f} min", flush=True)
+
+            # Drop this filter set's KDE, which spans the whole library, so
+            # that only one is held in memory at a time
+            cs.remove_filterset(filters)
+    print(f"Wrote {args.out_hdf5}", flush=True)
+
+    # Write the plain text summary
+    write_text(args.out_text, index, galaxy, dist_err[:, N_NEIGHBOR - 1],
+               dist_euc[:, N_NEIGHBOR - 1], pcts, names)
+    print(f"Wrote {args.out_text}", flush=True)
     print(f"Total time {time.time() - t0:.1f} s")
 
 

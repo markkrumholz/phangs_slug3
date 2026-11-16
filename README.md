@@ -61,7 +61,10 @@ python phangs_cluster_slug.py --ncluster 0 # whole catalog
 ```
 
 Run `python phangs_cluster_slug.py --help` for all options. The full
-catalog's HDF5 output is estimated at about 34 GB.
+catalog's HDF5 output is estimated at about 34 GB, far more than fits in
+memory, so the script processes clusters in chunks (`--chunk`, default
+500) and writes each chunk's posterior samples to the HDF5 file as it
+goes. A run on a 500-cluster sample peaked at about 12 GB of memory.
 
 ### `phangs_kde.py`
 
