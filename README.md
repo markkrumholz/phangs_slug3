@@ -37,8 +37,11 @@ The main analysis script. For each cluster in the catalog it:
    50th, 84th, and 95th percentiles of the marginal posterior of log
    mass, log age, A_V, and [Fe/H].
 
-The prior is dN/dM ∝ M^-1.5, and dN/dT ∝ T^0 for T < 10^6.5 yr and
-T^-0.5 for older ages. It is flat in A_V and [Fe/H].
+The prior in mass and age is d²N/dM dT ∝ M^α_M max(T, T_break)^α_T,
+by default with α_M = −1.5, T_break = 10^6.5 yr, and α_T = −0.5
+(`--alpha-m`, `--log-t-break`, `--alpha-t`). It is flat in A_V and
+[Fe/H]. The prior is recorded in the text summary's header and in the
+HDF5 file's root attributes.
 
 Outputs, written next to the script:
 
@@ -58,9 +61,13 @@ Usage:
 ```bash
 python phangs_cluster_slug.py              # first 20 clusters (test run)
 python phangs_cluster_slug.py --ncluster 0 # whole catalog
+# every 25th cluster, with a steeper mass prior
+python phangs_cluster_slug.py --ncluster 0 --skip 25 --alpha-m -2 \
+    --out-text skip25_summary.txt --out-hdf5 skip25_samples.h5
 ```
 
-Run `python phangs_cluster_slug.py --help` for all options. The full
+`--skip N` analyzes only every Nth cluster of the catalog (applied before
+`--ncluster`); `--catalog` selects a different input catalog. Run `python phangs_cluster_slug.py --help` for all options. The full
 catalog's HDF5 output is estimated at about 34 GB, far more than fits in
 memory, so the script processes clusters in chunks (`--chunk`, default
 500) and writes each chunk's posterior samples to the HDF5 file as it

@@ -26,9 +26,10 @@ Outputs, written to the directory holding this script:
   the distances to its 5 nearest neighbors in each norm ("dist_err" and
   "dist_euc").
 
-The prior is dN/dM ~ M^-1.5, and dN/dT ~ T^0 for T < 10^6.5 yr and
-T^-0.5 for older ages (continuous at 10^6.5 yr); it is flat in A_V and
-[Fe/H] (i.e. the library's own uniform distributions of these are kept).
+The prior in mass and age is d^2N / dM dT ~ M^alpha_M max(T, T_break)^alpha_T,
+with alpha_M = -1.5, T_break = 10^6.5 yr, and alpha_T = -0.5 by default
+(all three can be set on the command line); it is flat in A_V and [Fe/H]
+(i.e. the library's own uniform distributions of these are kept).
 
 Each band's library filter is chosen per cluster from the instrument
 PHANGS_OBS_SUMMARY gives for it (WFC3/UVIS or ACS/WFC). Clusters with
@@ -76,38 +77,41 @@ N_NEIGHBOR = 5
 PERCENTILES = [5, 16, 50, 84, 95]
 QUANTITY_LABELS = {"mass": "logM", "age": "logT", "A_V": "AV", "metallicity": "FeH"}
 
-# Age at which the age prior breaks from T^0 to T^-0.5
-T_BREAK = 10.0**6.5  # yr
+# Default prior parameters: d^2N / dM dT ~ M^ALPHA_M max(T, T_BREAK)^ALPHA_T
+ALPHA_M = -1.5
+ALPHA_T = -0.5
+LOG_T_BREAK = 6.5  # log10(T_break / yr)
 
 
-def prior(mass, age, av, feh):
+def make_prior(alpha_m=ALPHA_M, alpha_t=ALPHA_T, t_break=10.0**LOG_T_BREAK):
     """
-    Prior probability density of a library cluster's properties.
+    Make the prior function to pass to cluster_slug.
 
     Parameters
     ----------
-    mass : astropy.units.Quantity
-        Cluster masses.
-    age : astropy.units.Quantity
-        Cluster ages.
-    av : astropy.units.Quantity or None
-        Visual extinctions (unused: the prior is flat in A_V).
-    feh : numpy.ndarray
-        Metallicities [Fe/H] (unused: the prior is flat in [Fe/H]).
+    alpha_m : float
+        Index of the mass distribution, dN/dM ~ M^alpha_m.
+    alpha_t : float
+        Index of the age distribution above t_break.
+    t_break : float
+        Age in yr below which the age distribution is flat.
 
     Returns
     -------
-    numpy.ndarray
-        The prior density per unit (linear) mass and age, up to a
-        normalization: M^-1.5 times 1 for T < 10^6.5 yr, or
-        (T / 10^6.5 yr)^-0.5 for older T.
+    callable
+        prior(mass, age, av, feh), returning the prior probability density
+        of library clusters per unit (linear) mass and age, up to a
+        normalization: M^alpha_m (max(T, t_break) / t_break)^alpha_t. It is
+        flat in A_V and [Fe/H], so av and feh are unused.
     """
-    m = mass.to_value(u.Msun)
-    t = age.to_value(u.yr)
-    return m**-1.5 * np.where(t < T_BREAK, 1.0, (t / T_BREAK)**-0.5)
+    def prior(mass, age, av, feh):
+        m = mass.to_value(u.Msun)
+        t = age.to_value(u.yr)
+        return m**alpha_m * (np.maximum(t, t_break) / t_break)**alpha_t
+    return prior
 
 
-def read_catalog(filename, ncluster=None):
+def read_catalog(filename, ncluster=None, skip=1):
     """
     Read the PHANGS catalog, converting photometry to absolute magnitudes.
 
@@ -116,7 +120,11 @@ def read_catalog(filename, ncluster=None):
     filename : str
         The catalog FITS file.
     ncluster : int, optional
-        Read only the first ncluster clusters (default: all).
+        Read only the first ncluster clusters (default: all), after
+        applying skip.
+    skip : int, optional
+        Read only every skip-th cluster: the 1st, (skip+1)th, (2 skip+1)th,
+        and so on (default 1, every cluster).
 
     Returns
     -------
@@ -140,7 +148,7 @@ def read_catalog(filename, ncluster=None):
         has no filter for.
     """
     with fits.open(filename) as hdul:
-        data = hdul[1].data
+        data = hdul[1].data[::skip]
         if ncluster is not None:
             data = data[:ncluster]
         index = np.asarray(data["INDEX"]).astype(int)
@@ -194,7 +202,7 @@ def marginal_percentiles(pts, wgts, h2inv, names):
     return out
 
 
-def write_text(filename, index, galaxy, d5_err, d5_euc, pcts, names):
+def write_text(filename, index, galaxy, d5_err, d5_euc, pcts, names, prior_desc):
     """
     Write the plain text summary.
 
@@ -216,12 +224,15 @@ def write_text(filename, index, galaxy, d5_err, d5_euc, pcts, names):
         Marginal percentiles of each quantity.
     names : list of str
         The inference quantities, in the order of pcts' second axis.
+    prior_desc : str
+        Description of the prior, for the header.
     """
     cols = ["index", "galaxy", "d5_err", "d5_euc"] + [f"{QUANTITY_LABELS[n]}_{p:02d}"
                                                        for n in names for p in PERCENTILES]
     widths = [7, 9, 8, 8] + [8] * (len(cols) - 4)
     with open(filename, "w") as f:
         f.write("# cluster_slug posteriors for PHANGS-HST DR5 machine-classified class 1+2 clusters\n")
+        f.write(f"# Prior: {prior_desc}\n")
         f.write("# Columns: index = PHANGS catalog INDEX; galaxy = PHANGS_GALAXY;\n")
         f.write(f"#   d5_err = distance to the {N_NEIGHBOR}th nearest library neighbor with the errors\n")
         f.write("#        norm, in units of the photometric errors (RMS over bands of difference / error);\n")
@@ -239,8 +250,22 @@ def write_text(filename, index, galaxy, d5_err, d5_euc, pcts, names):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--catalog", default=CATALOG,
+                        help="input PHANGS FITS catalog (default: the DR5 class 1+2 catalog next "
+                        "to this script)")
     parser.add_argument("--ncluster", type=int, default=20,
-                        help="process only the first NCLUSTER clusters (default 20); 0 for all")
+                        help="process only the first NCLUSTER clusters (default 20), after "
+                        "applying --skip; 0 for all")
+    parser.add_argument("--skip", type=int, default=1,
+                        help="process only every SKIP-th cluster of the catalog (default 1, all)")
+    parser.add_argument("--alpha-m", type=float, default=ALPHA_M,
+                        help=f"mass prior index alpha_M, dN/dM ~ M^alpha_M (default {ALPHA_M})")
+    parser.add_argument("--alpha-t", type=float, default=ALPHA_T,
+                        help=f"age prior index alpha_T, dN/dT ~ max(T, T_break)^alpha_T "
+                        f"(default {ALPHA_T})")
+    parser.add_argument("--log-t-break", type=float, default=LOG_T_BREAK,
+                        help=f"log10(T_break / yr), below which the age prior is flat "
+                        f"(default {LOG_T_BREAK})")
     parser.add_argument("--mass-tol", type=float, default=1e-3,
                         help="massTol for conditional_sample (default 1e-3)")
     parser.add_argument("--out-text", default=osp.join(HERE, "phangs_cluster_slug_summary.txt"),
@@ -250,15 +275,22 @@ def main():
     parser.add_argument("--chunk", type=int, default=500,
                         help="number of clusters to process and write at a time (default 500)")
     args = parser.parse_args()
+    if args.skip < 1:
+        parser.error("--skip must be at least 1")
+    prior_desc = (f"d^2N/dM dT ~ M^alpha_M max(T, T_break)^alpha_T, alpha_M = {args.alpha_m:g}, "
+                  f"alpha_T = {args.alpha_t:g}, T_break = 10^{args.log_t_break:g} yr")
 
     # Read the data
     t0 = time.time()
-    index, galaxy, phot, phot_err, band_filters = read_catalog(CATALOG, args.ncluster or None)
+    index, galaxy, phot, phot_err, band_filters = read_catalog(
+        args.catalog, args.ncluster or None, args.skip)
     ncl = len(index)
-    print(f"Read {ncl} clusters from {osp.basename(CATALOG)}", flush=True)
+    print(f"Read {ncl} clusters from {osp.basename(args.catalog)}"
+          + (f" (every {args.skip}th)" if args.skip > 1 else ""), flush=True)
+    print(f"Prior: {prior_desc}", flush=True)
 
     # Load the default library, with our prior
-    cs = cluster_slug(priors=prior)
+    cs = cluster_slug(priors=make_prior(args.alpha_m, args.alpha_t, 10.0**args.log_t_break))
     names = list(cs.inference_quantities)
     print(f"Loaded library ({cs.size} clusters) in {time.time() - t0:.1f} s; "
           f"inference quantities {names}", flush=True)
@@ -281,7 +313,7 @@ def main():
     ndone = 0
 
     with h5py.File(args.out_hdf5, "w") as f:
-        f.attrs["catalog"] = osp.basename(CATALOG)
+        f.attrs["catalog"] = osp.basename(args.catalog)
         f.attrs["quantities"] = names
         f.attrs["description"] = (
             "One group per cluster, named by its PHANGS catalog INDEX. 'points' (K x nqty) and "
@@ -295,6 +327,11 @@ def main():
             "first, from cluster_slug.neighbors with the 'errors' norm (in units of the "
             "photometric errors) and the 'Euclidean' norm (in mag), respectively.")
         f.attrs["mass_tol"] = args.mass_tol
+        f.attrs["skip"] = args.skip
+        f.attrs["prior"] = prior_desc
+        f.attrs["alpha_M"] = args.alpha_m
+        f.attrs["alpha_T"] = args.alpha_t
+        f.attrs["log_T_break"] = args.log_t_break
 
         for key, member_list in groups.items():
             members_all = np.array(member_list)
@@ -365,7 +402,7 @@ def main():
 
     # Write the plain text summary
     write_text(args.out_text, index, galaxy, dist_err[:, N_NEIGHBOR - 1],
-               dist_euc[:, N_NEIGHBOR - 1], pcts, names)
+               dist_euc[:, N_NEIGHBOR - 1], pcts, names, prior_desc)
     print(f"Wrote {args.out_text}", flush=True)
     print(f"Total time {time.time() - t0:.1f} s")
 
