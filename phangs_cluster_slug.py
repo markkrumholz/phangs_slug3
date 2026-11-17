@@ -111,7 +111,7 @@ def make_prior(alpha_m=ALPHA_M, alpha_t=ALPHA_T, t_break=10.0**LOG_T_BREAK):
     return prior
 
 
-def read_catalog(filename, ncluster=None, skip=1):
+def read_catalog(filename, ncluster=None, skip=1, indices=None):
     """
     Read the PHANGS catalog, converting photometry to absolute magnitudes.
 
@@ -125,6 +125,10 @@ def read_catalog(filename, ncluster=None, skip=1):
     skip : int, optional
         Read only every skip-th cluster: the 1st, (skip+1)th, (2 skip+1)th,
         and so on (default 1, every cluster).
+    indices : list of int, optional
+        Read only the clusters with these catalog INDEX values, in catalog
+        order (default: no selection by index). Applied before skip and
+        ncluster.
 
     Returns
     -------
@@ -145,10 +149,17 @@ def read_catalog(filename, ncluster=None, skip=1):
     ------
     ValueError
         If PHANGS_OBS_SUMMARY gives an instrument for a band that BANDS
-        has no filter for.
+        has no filter for, or if some of indices are not in the catalog.
     """
     with fits.open(filename) as hdul:
-        data = hdul[1].data[::skip]
+        data = hdul[1].data
+        if indices is not None:
+            cat_index = np.asarray(data["INDEX"]).astype(int)
+            missing = sorted(set(indices) - set(cat_index))
+            if missing:
+                raise ValueError(f"indices not in the catalog: {missing}")
+            data = data[np.isin(cat_index, indices)]
+        data = data[::skip]
         if ncluster is not None:
             data = data[:ncluster]
         index = np.asarray(data["INDEX"]).astype(int)
@@ -253,11 +264,14 @@ def main():
     parser.add_argument("--catalog", default=CATALOG,
                         help="input PHANGS FITS catalog (default: the DR5 class 1+2 catalog next "
                         "to this script)")
-    parser.add_argument("--ncluster", type=int, default=20,
-                        help="process only the first NCLUSTER clusters (default 20), after "
-                        "applying --skip; 0 for all")
+    parser.add_argument("--ncluster", type=int, default=None,
+                        help="process only the first NCLUSTER clusters, after applying --skip; "
+                        "0 for all (default 20, or all of those given by --index)")
     parser.add_argument("--skip", type=int, default=1,
                         help="process only every SKIP-th cluster of the catalog (default 1, all)")
+    parser.add_argument("--index", type=int, nargs="+", default=None,
+                        help="process only the clusters with these catalog INDEX values "
+                        "(default: all); cannot be combined with --skip or --ncluster")
     parser.add_argument("--alpha-m", type=float, default=ALPHA_M,
                         help=f"mass prior index alpha_M, dN/dM ~ M^alpha_M (default {ALPHA_M})")
     parser.add_argument("--alpha-t", type=float, default=ALPHA_T,
@@ -277,13 +291,21 @@ def main():
     args = parser.parse_args()
     if args.skip < 1:
         parser.error("--skip must be at least 1")
+    if args.index is not None:
+        if args.skip != 1:
+            parser.error("--index and --skip cannot be used together")
+        if args.ncluster is not None:
+            parser.error("--index and --ncluster cannot be used together")
+        args.ncluster = 0
+    elif args.ncluster is None:
+        args.ncluster = 20
     prior_desc = (f"d^2N/dM dT ~ M^alpha_M max(T, T_break)^alpha_T, alpha_M = {args.alpha_m:g}, "
                   f"alpha_T = {args.alpha_t:g}, T_break = 10^{args.log_t_break:g} yr")
 
     # Read the data
     t0 = time.time()
     index, galaxy, phot, phot_err, band_filters = read_catalog(
-        args.catalog, args.ncluster or None, args.skip)
+        args.catalog, args.ncluster or None, args.skip, args.index)
     ncl = len(index)
     print(f"Read {ncl} clusters from {osp.basename(args.catalog)}"
           + (f" (every {args.skip}th)" if args.skip > 1 else ""), flush=True)

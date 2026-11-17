@@ -67,7 +67,9 @@ python phangs_cluster_slug.py --ncluster 0 --skip 25 --alpha-m -2 \
 ```
 
 `--skip N` analyzes only every Nth cluster of the catalog (applied before
-`--ncluster`); `--catalog` selects a different input catalog. Run `python phangs_cluster_slug.py --help` for all options. The full
+`--ncluster`); `--index I [I ...]` analyzes only the clusters with those
+catalog indices (and cannot be combined with `--skip` or `--ncluster`);
+`--catalog` selects a different input catalog. Run `python phangs_cluster_slug.py --help` for all options. The full
 catalog's HDF5 output is estimated at about 34 GB, far more than fits in
 memory, so the script processes clusters in chunks (`--chunk`, default
 500) and writes each chunk's posterior samples to the HDF5 file as it
