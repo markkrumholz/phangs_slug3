@@ -103,6 +103,19 @@ python plot_triangle.py 2 - 10
 python plot_triangle.py 2-10 --file other_samples.h5
 ```
 
+### `split_by_galaxy.py`
+
+Splits the posterior sample file into one file per galaxy,
+`phangs_GALAXY_cluster_slug_samples.h5`, written next to the input. Each
+has the same layout and root attributes as the input, plus a root
+attribute `galaxy`, so `load_kde(index, filename)` can read it. The
+compressed data are copied without decompressing them.
+
+```bash
+python split_by_galaxy.py                     # phangs_cluster_slug_samples.h5
+python split_by_galaxy.py other_samples.h5 --out-dir split/
+```
+
 ## Requirements
 
 - slug3, built with its Python bindings, with the default `cluster_slug`
