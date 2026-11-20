@@ -119,6 +119,21 @@ python split_by_galaxy.py                     # phangs_cluster_slug_samples.h5
 python split_by_galaxy.py other_samples.h5 --out-dir split/
 ```
 
+### `galaxy_distributions.py`
+
+Computes the distribution of a cluster property ([Fe/H] by default) in
+each galaxy: the average of the marginal posterior PDFs of the galaxy's
+clusters. Each cluster's sample weights are normalized to sum to 1, so that
+every cluster counts equally, and the samples are combined into one KDE;
+the same percentiles as for single clusters are written to a text file
+(by default the input's name with `_samples.h5` replaced by
+`_galaxy_FeH.txt`).
+
+```bash
+python galaxy_distributions.py phangs_cluster_slug_samples.h5
+python galaxy_distributions.py phangs_cluster_slug_samples.h5 --quantity age
+```
+
 ## Requirements
 
 - slug3, built with its Python bindings, with the default `cluster_slug`
