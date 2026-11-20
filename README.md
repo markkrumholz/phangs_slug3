@@ -108,8 +108,11 @@ python plot_triangle.py 2-10 --file other_samples.h5
 
 ### `split_by_galaxy.py`
 
-Splits the posterior sample file into one file per galaxy,
-`phangs_GALAXY_cluster_slug_samples.h5`, written next to the input. Each
+Splits the posterior sample file into one file per galaxy, named after
+the input with the galaxy inserted after `phangs_` (so
+`phangs_cluster_slug_samples.h5` gives
+`phangs_GALAXY_cluster_slug_samples.h5`) and written next to the input
+unless `--out-dir` is given. Each
 has the same layout and root attributes as the input, plus a root
 attribute `galaxy`, so `load_kde(index, filename)` can read it. The
 compressed data are copied without decompressing them.
@@ -117,6 +120,18 @@ compressed data are copied without decompressing them.
 ```bash
 python split_by_galaxy.py                     # phangs_cluster_slug_samples.h5
 python split_by_galaxy.py other_samples.h5 --out-dir split/
+```
+
+### `compare_thilker.py`
+
+Plots the cluster_slug median log mass and log age (50th percentiles from
+a text summary) against the Thilker+25 deterministic fits in the PHANGS
+catalog, with the 1:1 line, writing `mcomparison<TAG>.pdf` and
+`tcomparison<TAG>.pdf` in the current directory.
+
+```bash
+python compare_thilker.py phangs_cluster_slug_summary.txt
+python compare_thilker.py other_summary.txt --tag _other
 ```
 
 ### `galaxy_distributions.py`

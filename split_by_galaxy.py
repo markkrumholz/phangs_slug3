@@ -2,8 +2,12 @@
 Split the cluster_slug posterior sample file written by
 phangs_cluster_slug.py into one file per galaxy.
 
-Each output file, phangs_GALAXY_cluster_slug_samples.h5, has the same
-layout as the input: one group per cluster, named by its catalog index,
+Each output file is named after the input, with the galaxy inserted after
+its leading "phangs_" (e.g. phangs_cluster_slug_samples.h5 gives
+phangs_GALAXY_cluster_slug_samples.h5, and
+phangs_cluster_slug_hstlib_samples.h5 gives
+phangs_GALAXY_cluster_slug_hstlib_samples.h5), and has the same layout as
+the input: one group per cluster, named by its catalog index,
 holding the same datasets and attributes, and the same root attributes,
 plus a root attribute "galaxy". Groups are copied with HDF5's object copy,
 so the compressed data are copied as they are, without decompressing them.
@@ -18,6 +22,29 @@ import time
 import h5py
 
 HERE = osp.dirname(osp.abspath(__file__))
+
+
+def galaxy_filename(infile, galaxy):
+    """
+    Name of a galaxy's output file.
+
+    Parameters
+    ----------
+    infile : str
+        The input sample file.
+    galaxy : str
+        The galaxy.
+
+    Returns
+    -------
+    str
+        The input's base name with the galaxy inserted after its leading
+        "phangs_" (or prepended, if it has none).
+    """
+    base = osp.basename(infile)
+    if base.startswith("phangs_"):
+        return f"phangs_{galaxy}_{base[len('phangs_'):]}"
+    return f"{galaxy}_{base}"
 
 
 def main():
@@ -41,7 +68,7 @@ def main():
               flush=True)
 
         for galaxy in sorted(by_galaxy):
-            outfile = osp.join(out_dir, f"phangs_{galaxy}_cluster_slug_samples.h5")
+            outfile = osp.join(out_dir, galaxy_filename(args.infile, galaxy))
             with h5py.File(outfile, "w") as fout:
                 for key, val in fin.attrs.items():
                     fout.attrs[key] = val
