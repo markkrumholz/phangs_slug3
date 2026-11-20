@@ -66,7 +66,10 @@ python phangs_cluster_slug.py --ncluster 0 --skip 25 --alpha-m -2 \
     --out-text skip25_summary.txt --out-hdf5 skip25_samples.h5
 ```
 
-`--skip N` analyzes only every Nth cluster of the catalog (applied before
+`--library FILE` uses another `cluster_slug` library instead of the
+default one; the library and the range of each quantity it covers are
+recorded in the outputs (`plot_triangle.py` truncates its axes to that
+range). `--skip N` analyzes only every Nth cluster of the catalog (applied before
 `--ncluster`); `--index I [I ...]` analyzes only the clusters with those
 catalog indices (and cannot be combined with `--skip` or `--ncluster`);
 `--catalog` selects a different input catalog. Run `python phangs_cluster_slug.py --help` for all options. The full

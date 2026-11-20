@@ -44,8 +44,10 @@ PLOT_RANGE_PAD = 0.5
 
 # Range of each quantity covered by the default cluster_slug library
 # (M = 10^2 - 10^7 Msun, T = 10^5 - 1.5 x 10^10 yr, A_V = 0 - 3 mag,
-# [Fe/H] = -1 - +0.3); the plot range is truncated to these, since the
-# kernel's Gaussian broadening can carry percentiles slightly past them
+# [Fe/H] = -1 - +0.3); the plot range is truncated to the library's range,
+# since the kernel's Gaussian broadening can carry percentiles slightly
+# past it. This is used for sample files that do not record the range of
+# the library they came from (in a "library_range" attribute).
 LIBRARY_RANGE = {"mass": (2.0, 7.0),
                  "age": (5.0, float(np.log10(1.5e10))),
                  "A_V": (0.0, 3.0),
@@ -85,7 +87,7 @@ def parse_indices(tokens):
     return list(range(lo, hi + 1))
 
 
-def plot_triangle(index, kde, galaxy=None):
+def plot_triangle(index, kde, galaxy=None, lib_range=None):
     """
     Make the triangle plot of one cluster's posterior and write it to file.
 
@@ -97,6 +99,9 @@ def plot_triangle(index, kde, galaxy=None):
         Its posterior KDE.
     galaxy : str, optional
         Its galaxy, for the plot title.
+    lib_range : dict, optional
+        The (min, max) of each quantity covered by the library (default
+        LIBRARY_RANGE).
 
     Returns
     -------
@@ -106,10 +111,11 @@ def plot_triangle(index, kde, galaxy=None):
     # Plot range in each quantity: the 1st to 99th percentiles of its
     # marginal posterior, padded by PLOT_RANGE_PAD on either side, and
     # truncated to the range the library covers
+    lib_range = LIBRARY_RANGE if lib_range is None else lib_range
     lolim, hilim = [], []
     for i, name in enumerate(kde.names):
         lo, hi = kde.percentile(i, PLOT_RANGE_PCT)
-        libmin, libmax = LIBRARY_RANGE[name]
+        libmin, libmax = lib_range[name]
         lolim.append(max(float(lo) - PLOT_RANGE_PAD, libmin))
         hilim.append(min(float(hi) + PLOT_RANGE_PAD, libmax))
 
@@ -148,6 +154,10 @@ def main():
     # Galaxy names, for the titles, and which indices the file holds
     with h5py.File(args.file, "r") as f:
         galaxies = {int(k): str(f[k].attrs.get("galaxy", "")) or None for k in f}
+        lib_range = None
+        if "library_range" in f.attrs:
+            lib_range = {str(n): tuple(float(v) for v in r)
+                         for n, r in zip(f.attrs["quantities"], f.attrs["library_range"])}
 
     nfail = 0
     for index in indices:
@@ -161,7 +171,7 @@ def main():
             print(f"Skipping cluster {index}: {err}", file=sys.stderr)
             nfail += 1
             continue
-        print(f"Wrote {plot_triangle(index, kde, galaxies[index])}")
+        print(f"Wrote {plot_triangle(index, kde, galaxies[index], lib_range)}")
     if nfail:
         sys.exit(1)
 

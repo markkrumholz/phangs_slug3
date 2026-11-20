@@ -31,6 +31,9 @@ with alpha_M = -1.5, T_break = 10^6.5 yr, and alpha_T = -0.5 by default
 (all three can be set on the command line); it is flat in A_V and [Fe/H]
 (i.e. the library's own uniform distributions of these are kept).
 
+The cluster_slug default library is used unless another is given with
+--library.
+
 Each band's library filter is chosen per cluster from the instrument
 PHANGS_OBS_SUMMARY gives for it (WFC3/UVIS or ACS/WFC). Clusters with
 photometry missing (NaN) in some bands are fit using only the bands they
@@ -71,6 +74,11 @@ BANDS = {"NUV": {"UVIS": "HST.WFC3_UVIS1.F275W"},
 
 # Number of nearest neighbors to find
 N_NEIGHBOR = 5
+
+# Library PDFs giving the range of each inference quantity, and the
+# transformation to the variable cluster_slug uses for it
+LIBRARY_PDFS = {"mass": ("cmf", np.log10), "age": ("outTimeDist", np.log10),
+                "A_V": ("avDist", float), "metallicity": ("fehDist", float)}
 
 # Percentiles to compute, and the inference quantities with the labels
 # used for them in the text output
@@ -213,7 +221,7 @@ def marginal_percentiles(pts, wgts, h2inv, names):
     return out
 
 
-def write_text(filename, index, galaxy, d5_err, d5_euc, pcts, names, prior_desc):
+def write_text(filename, index, galaxy, d5_err, d5_euc, pcts, names, prior_desc, library):
     """
     Write the plain text summary.
 
@@ -237,12 +245,15 @@ def write_text(filename, index, galaxy, d5_err, d5_euc, pcts, names, prior_desc)
         The inference quantities, in the order of pcts' second axis.
     prior_desc : str
         Description of the prior, for the header.
+    library : str
+        The library used, for the header.
     """
     cols = ["index", "galaxy", "d5_err", "d5_euc"] + [f"{QUANTITY_LABELS[n]}_{p:02d}"
                                                        for n in names for p in PERCENTILES]
     widths = [7, 9, 8, 8] + [8] * (len(cols) - 4)
     with open(filename, "w") as f:
         f.write("# cluster_slug posteriors for PHANGS-HST DR5 machine-classified class 1+2 clusters\n")
+        f.write(f"# Library: {library}\n")
         f.write(f"# Prior: {prior_desc}\n")
         f.write("# Columns: index = PHANGS catalog INDEX; galaxy = PHANGS_GALAXY;\n")
         f.write(f"#   d5_err = distance to the {N_NEIGHBOR}th nearest library neighbor with the errors\n")
@@ -261,6 +272,9 @@ def write_text(filename, index, galaxy, d5_err, d5_euc, pcts, names, prior_desc)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--library", default=None,
+                        help="cluster_slug library HDF5 file (default: cluster_slug's default "
+                        "library)")
     parser.add_argument("--catalog", default=CATALOG,
                         help="input PHANGS FITS catalog (default: the DR5 class 1+2 catalog next "
                         "to this script)")
@@ -311,11 +325,16 @@ def main():
           + (f" (every {args.skip}th)" if args.skip > 1 else ""), flush=True)
     print(f"Prior: {prior_desc}", flush=True)
 
-    # Load the default library, with our prior
-    cs = cluster_slug(priors=make_prior(args.alpha_m, args.alpha_t, 10.0**args.log_t_break))
+    # Load the library, with our prior
+    cs = cluster_slug(args.library,
+                      priors=make_prior(args.alpha_m, args.alpha_t, 10.0**args.log_t_break))
     names = list(cs.inference_quantities)
-    print(f"Loaded library ({cs.size} clusters) in {time.time() - t0:.1f} s; "
-          f"inference quantities {names}", flush=True)
+    library = osp.abspath(args.library) if args.library else "cluster_slug default library"
+    # Range of each inference quantity the library covers
+    lib_range = np.array([[fn(cs.pdfs[pdf].getMin()), fn(cs.pdfs[pdf].getMax())]
+                          for pdf, fn in (LIBRARY_PDFS[n] for n in names)])
+    print(f"Loaded {library} ({cs.size} clusters) in {time.time() - t0:.1f} s; "
+          f"inference quantities {names}, ranges {lib_range.tolist()}", flush=True)
 
     # Group clusters by their filter set: the filters of the bands they
     # have photometry in. Since every band's filters are distinct, the
@@ -336,6 +355,8 @@ def main():
 
     with h5py.File(args.out_hdf5, "w") as f:
         f.attrs["catalog"] = osp.basename(args.catalog)
+        f.attrs["library"] = library
+        f.attrs["library_range"] = lib_range
         f.attrs["quantities"] = names
         f.attrs["description"] = (
             "One group per cluster, named by its PHANGS catalog INDEX. 'points' (K x nqty) and "
@@ -424,7 +445,7 @@ def main():
 
     # Write the plain text summary
     write_text(args.out_text, index, galaxy, dist_err[:, N_NEIGHBOR - 1],
-               dist_euc[:, N_NEIGHBOR - 1], pcts, names, prior_desc)
+               dist_euc[:, N_NEIGHBOR - 1], pcts, names, prior_desc, library)
     print(f"Wrote {args.out_text}", flush=True)
     print(f"Total time {time.time() - t0:.1f} s")
 
