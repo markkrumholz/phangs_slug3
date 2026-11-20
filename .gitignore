@@ -3,3 +3,4 @@
 *.txt
 *.fits
 __pycache__/
+.DS_Store
