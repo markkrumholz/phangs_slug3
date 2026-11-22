@@ -142,7 +142,8 @@ the 5th-neighbor distance in the errors norm (`d5_err`) on the x axis and
 in the Euclidean norm (`d5_euc`, mag) on the y axis. By default it reads
 `phangs_cluster_slug_phangslib_summary.txt`, writes the summary's name with
 `_summary.txt` replaced by `_distances.pdf`, plots 0 - 4 in `d5_err` and
-0 - 0.6 mag in `d5_euc` on a linear scale, and draws the individually
+0 - 0.6 mag in `d5_euc` on a linear scale with 50 bins in each dimension
+(`--nbin`), and draws the individually
 shown points with alpha 0.5. Clusters outside the plotted range are left
 out. Labels are rendered with LaTeX, so a LaTeX installation is needed.
 

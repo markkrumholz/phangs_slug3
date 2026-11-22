@@ -7,8 +7,8 @@ the distance to the 5th nearest library neighbor in the "errors" norm
 (d5_err, in units of the photometric errors) on the x axis and in the
 Euclidean norm (d5_euc, in mag) on the y axis. By default the plot spans
 0 - 4 in d5_err and 0 - 0.6 mag in d5_euc, the PDFs are shown on a linear
-scale, and the individually shown points have alpha 0.5; all of these can
-be changed with command-line options. The output defaults to the
+scale with 50 bins in each dimension, and the individually shown points
+have alpha 0.5; all of these can be changed with command-line options. The output defaults to the
 summary's name with its final "_summary.txt" replaced by "_distances.pdf".
 
 Usage examples::
@@ -99,6 +99,8 @@ def main():
     parser.add_argument("--log", action=argparse.BooleanOptionalAction, default=False,
                         help="show the PDFs on a logarithmic rather than linear scale "
                         "(default: linear)")
+    parser.add_argument("--nbin", type=int, default=50,
+                        help="number of bins in each dimension (default 50)")
     parser.add_argument("--scat-alpha", type=float, default=0.5,
                         help="alpha of the individually shown points (default 0.5)")
     args = parser.parse_args()
@@ -114,6 +116,7 @@ def main():
              lolim=[args.err_range[0], args.abs_range[0]],
              hilim=[args.err_range[1], args.abs_range[1]],
              log=args.log,
+             nbin=args.nbin,
              scat_alpha=args.scat_alpha,
              labels=[r"$D^5_\mathrm{err}$", r"$D^5_\mathrm{abs}$ [mag]"])
     plt.gcf().savefig(out, bbox_inches="tight")
