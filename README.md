@@ -134,6 +134,24 @@ python compare_thilker.py phangs_cluster_slug_summary.txt
 python compare_thilker.py other_summary.txt --tag _other
 ```
 
+### `plot_distances.py`
+
+Plots the distribution of clusters in the two nearest-neighbor distances
+from a text summary, using `npdfplot` from slug3's `examples/cluster_slug`:
+the 5th-neighbor distance in the errors norm (`d5_err`) on the x axis and
+in the Euclidean norm (`d5_euc`, mag) on the y axis. By default it reads
+`phangs_cluster_slug_phangslib_summary.txt`, writes the summary's name with
+`_summary.txt` replaced by `_distances.pdf`, plots 0 - 4 in `d5_err` and
+0 - 0.6 mag in `d5_euc` on a linear scale, and draws the individually
+shown points with alpha 0.5. Clusters outside the plotted range are left
+out. Labels are rendered with LaTeX, so a LaTeX installation is needed.
+
+```bash
+python plot_distances.py
+python plot_distances.py phangs_cluster_slug_summary.txt --err-range 0 5 \
+    --abs-range 0 1 --log --scat-alpha 1
+```
+
 ### `galaxy_distributions.py`
 
 Computes the distribution of a cluster property ([Fe/H] by default) in
