@@ -134,6 +134,25 @@ python compare_thilker.py phangs_cluster_slug_summary.txt
 python compare_thilker.py other_summary.txt --tag _other
 ```
 
+### `compare_thilker_gc.py`
+
+The same age comparison, restricted to the clusters most confidently
+identified as old globular clusters, with error bars. A cluster is selected
+when it lies in the old globular cluster clump of the machine-classified
+color-color diagram (`PHANGS_CC_CLASS_ML` = `OGCC`), was fit by Thilker+25
+with the old globular cluster grid (`PHANGS_DR5_THILKER25_GRID` = `OGC`),
+and has a cluster_slug median mass of at least `--min-mass` (default 5e4
+M☉). The slug error bars span the 16th to 84th percentiles of log T. The
+Thilker error bars span the age ± `PHANGS_DR5_THILKER25_AGE_ERR`; where the
+lower end is at or below zero age, the bar runs to the bottom of the plot.
+With `--thilker-err limits`, they span `AGE_LIMLO` to `AGE_LIMHI` instead.
+The output is `tcomparison_gc<TAG>.pdf` in the current directory.
+
+```bash
+python compare_thilker_gc.py --tag _phangslib   # phangslib summary by default
+python compare_thilker_gc.py --thilker-err limits --min-mass 1e5
+```
+
 ### `plot_distances.py`
 
 Plots the distribution of clusters in the two nearest-neighbor distances
