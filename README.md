@@ -136,21 +136,29 @@ python compare_thilker.py other_summary.txt --tag _other
 
 ### `compare_thilker_gc.py`
 
-The same age comparison, restricted to the clusters most confidently
-identified as old globular clusters, with error bars. A cluster is selected
-when it lies in the old globular cluster clump of the machine-classified
-color-color diagram (`PHANGS_CC_CLASS_ML` = `OGCC`), was fit by Thilker+25
-with the old globular cluster grid (`PHANGS_DR5_THILKER25_GRID` = `OGC`),
-and has a cluster_slug median mass of at least `--min-mass` (default 5e4
-M☉). The slug error bars span the 16th to 84th percentiles of log T. The
-Thilker error bars span the age ± `PHANGS_DR5_THILKER25_AGE_ERR`; where the
-lower end is at or below zero age, the bar runs to the bottom of the plot.
-With `--thilker-err limits`, they span `AGE_LIMLO` to `AGE_LIMHI` instead.
-The output is `tcomparison_gc<TAG>.pdf` in the current directory.
+The age comparison for the clusters most confidently identified as old
+globular clusters, as a heatmap of the joint distribution of slug and
+Thilker+25 ages. A cluster is selected when it lies in the old globular
+cluster clump of the machine-classified color-color diagram
+(`PHANGS_CC_CLASS_ML` = `OGCC`), was fit by Thilker+25 with the old
+globular cluster grid (`PHANGS_DR5_THILKER25_GRID` = `OGC`), and has a
+cluster_slug median mass of at least `--min-mass` (default 5e4 M☉).
+
+The heatmap is made with `npdfplot` on linear scales, in the style of
+`plot_distances.py`, with the 1:1 line added. Its points are the selected
+clusters' posterior samples from the HDF5 file matching the summary
+(`--samples`). Each sample has its weight, and each cluster's weights are
+normalized to sum to 1. Each sample is paired with a Thilker+25 age drawn
+from a Gaussian with mean `PHANGS_DR5_THILKER25_AGE` and dispersion
+`PHANGS_DR5_THILKER25_AGE_ERR` in linear age, truncated at zero. This
+marginalizes over the Thilker+25 errors. The black contour encloses 99% of
+the weight. Both axes span log T = 7 to 10.5 (`--range`), with 50 bins
+(`--nbin`). The draws use a fixed seed (`--seed`). The output is
+`tcomparison_gc<TAG>.pdf` in the current directory.
 
 ```bash
 python compare_thilker_gc.py --tag _phangslib   # phangslib summary by default
-python compare_thilker_gc.py --thilker-err limits --min-mass 1e5
+python compare_thilker_gc.py --min-mass 1e5 --range 6 11 --nbin 30
 ```
 
 ### `plot_distances.py`
